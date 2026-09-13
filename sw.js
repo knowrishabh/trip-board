@@ -1,6 +1,11 @@
-/* Cache the app shell so the trip opens with no signal, and keep any
-   map tiles you have already looked at. */
-const SHELL = "trip-board-shell-v1";
+/* Two caches with different jobs.
+
+   The app files are network-first: when you push a new app.js the next
+   launch with signal picks it up, and the cached copy is only a
+   fallback for when there is none. Map tiles are cache-first, because
+   a tile never changes and you want the ones you have already seen to
+   work on the ground. */
+const SHELL = "trip-board-shell-v2";
 const TILES = "trip-board-tiles-v1";
 
 self.addEventListener("install", (e) => {
@@ -39,18 +44,19 @@ self.addEventListener("fetch", (e) => {
 
   if (url.origin !== location.origin) return;
 
-  if (req.mode === "navigate") {
-    e.respondWith(fetch(req).catch(() => caches.match("./index.html")));
-    return;
-  }
-
   e.respondWith(
-    caches.open(SHELL).then(async (c) => {
-      const hit = await c.match(req);
-      if (hit) return hit;
-      const res = await fetch(req);
-      if (res.ok) c.put(req, res.clone());
-      return res;
-    })
+    (async () => {
+      const cache = await caches.open(SHELL);
+      try {
+        const res = await fetch(req);
+        if (res.ok) cache.put(req, res.clone());
+        return res;
+      } catch (err) {
+        const hit = await cache.match(req);
+        if (hit) return hit;
+        if (req.mode === "navigate") return cache.match("./index.html");
+        throw err;
+      }
+    })()
   );
 });
